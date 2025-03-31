@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Fitness Chatbot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Bootstrap CSS -->
+  <link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/bootstrap.min.css') }}"
+  >
+  <!-- Custom CSS -->
+  <link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='style.css') }}"
+  >
+</head>
+<body>
+  <div class="container-fluid vh-100">
+    <div class="row h-100">
+
+      <!-- Sidebar: Chat History -->
+      <div class="col-md-3 col-sm-4 border-end d-flex flex-column chat-history-container">
+        <h5 class="p-3 border-bottom">Chat History</h5>
+        <ul class="list-group flex-grow-1 overflow-auto" id="chat-history-list">
+          <!-- Conversations will be populated here via JavaScript -->
+        </ul>
+        <button id="new-chat-btn" class="btn btn-primary m-3 new-chat-btn">New Chat</button>
+      </div>
+
+      <!-- Main Chat Display -->
+      <div class="col-md-9 col-sm-8 d-flex flex-column chat-display-container">
+        <!-- Header -->
+        <div class="d-flex justify-content-between align-items-center p-3 border-bottom">
+          <h3>Fitness Chatbot</h3>
+          <div class="d-flex align-items-center">
+            <!-- Dark Mode Toggle -->
+            <label for="theme-toggle" class="form-check-label me-2">Dark Mode</label>
+            <input type="checkbox" id="theme-toggle" class="form-check-input">
+
+            <!-- Profile Dropdown -->
+            <div class="dropdown ms-3">
+              <a href="#" id="profileDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                <img
+                  src="{{ url_for('static', filename='images/profile_pictures/' + current_user.profile_picture) }}"
+                  alt="Profile"
+                  class="rounded-circle profile-icon"
+                >
+              </a>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
+                <li>
+                  <a class="dropdown-item" href="{{ url_for('change_profile_picture') }}">
+                    Change Profile Picture
+                  </a>
+                </li>
+                <li>
+                  <a class="dropdown-item" href="{{ url_for('logout') }}">
+                    Logout
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Area -->
+        <div id="chat-display" class="flex-grow-1 overflow-auto p-3">
+          <!-- Chat messages will be inserted here via JS -->
+          <div class="chat-message system-message">
+            Welcome! Select a conversation or start a new one.
+          </div>
+        </div>
+
+        <!-- Chat Input Form -->
+        <form id="chat-form" class="d-flex p-3 border-top">
+          <input
+            type="text"
+            id="message-input"
+            class="form-control me-2"
+            placeholder="Type your message..."
+            required
+          >
+          <button type="submit" class="btn btn-primary">Send</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap JS (Bundle) -->
+  <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const chatHistoryList = document.getElementById('chat-history-list');
+      const newChatBtn = document.getElementById('new-chat-btn');
+      const chatForm = document.getElementById('chat-form');
+      const chatInput = document.getElementById('message-input');
+      const chatDisplay = document.getElementById('chat-display');
+      const themeToggle = document.getElementById('theme-toggle');
+
+      // Track the currently active conversation ID
+      let currentConversationId = null;
+
+      // -----------------------------------------
+      //   Load All Conversations (for the sidebar)
+      // -----------------------------------------
+      function loadConversationHistory() {
+        fetch('/get_conversations')  // GET /get_conversations
+          .then(res => res.json())
+          .then(data => {
+            const conversations = data.conversations || [];
+            chatHistoryList.innerHTML = ''; // Clear existing list
+
+            conversations.forEach(conv => {
+              // Build <li> for each conversation
+              const li = document.createElement('li');
+              li.className = 'list-group-item d-flex justify-content-between align-items-center';
+              li.dataset.id = conv.id;
+
+              // Clicking the entire li => load conversation
+              li.addEventListener('click', () => {
+                loadConversationById(conv.id);
+              });
+
+              // Create a span for the conversation name
+              const nameSpan = document.createElement('span');
+              nameSpan.textContent = conv.name;
+
+              // (Optional) Delete button
+              const deleteBtn = document.createElement('button');
+              deleteBtn.className = 'btn btn-sm btn-danger ms-2';
+              deleteBtn.innerText = 'Delete';
+              // If user clicks Delete, don't trigger the li's click
+              deleteBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                const confirmDel = confirm(`Are you sure you want to delete ${conv.name}?`);
+                if (confirmDel) {
+                  fetch(`/delete_conversation/${conv.id}`, {
+                    method: 'POST'
+                  })
+                  .then(res => res.json())
+                  .then(result => {
+                    if (result.error) {
+                      alert(result.error);
+                    } else {
+                      alert(result.message); // e.g., "Conversation 3 deleted."
+                      // Reload the conversation list
+                      loadConversationHistory();
+                      // If we deleted the active conversation, reset
+                      if (currentConversationId === conv.id) {
+                        currentConversationId = null;
+                        chatDisplay.innerHTML = `
+                          <div class="chat-message system-message">
+                            Please select or create a conversation.
+                          </div>
+                        `;
+                      }
+                    }
+                  })
+                  .catch(err => console.error('Error deleting conversation:', err));
+                }
+              });
+
+              // Add the span and delete button to the <li>
+              li.appendChild(nameSpan);
+              li.appendChild(deleteBtn);
+
+              // Finally, append <li> to the chatHistoryList
+              chatHistoryList.appendChild(li);
+            });
+          })
+          .catch(err => console.error('Error fetching conversations:', err));
+      }
+
+      // ------------------------------------------------
+      //   Load a Single Conversation => show its messages
+      // ------------------------------------------------
+      function loadConversationById(conversationId) {
+        fetch(`/get_conversation/${conversationId}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+
+                // Set the current conversation ID
+                currentConversationId = conversationId;
+
+                // Clear chat display to avoid duplicate rendering
+                chatDisplay.innerHTML = '';
+
+                // Remove 'active' class from all history list items
+                const allListItems = chatHistoryList.querySelectorAll('li');
+                allListItems.forEach(li => li.classList.remove('active-conversation'));
+
+                // Highlight the active conversation
+                const activeLi = chatHistoryList.querySelector(`li[data-id="${conversationId}"]`);
+                if (activeLi) activeLi.classList.add('active-conversation');
+
+                // Append messages from the history
+                (data.history || []).forEach(msg => {
+                    const bubbleDiv = document.createElement('div');
+                    bubbleDiv.className = `chat-message ${msg.role === 'user' ? 'user-message' : 'bot-message'}`;
+                    bubbleDiv.textContent = msg.content;
+                    chatDisplay.appendChild(bubbleDiv);
+                });
+
+                // Scroll to the latest message
+                chatDisplay.scrollTop = chatDisplay.scrollHeight;
+            })
+            .catch(err => console.error('Error loading conversation:', err));
+    }
+
+
+
+
+
+      // ----------------------------------
+      //   Sending a Message to the Bot
+      // ----------------------------------
+      chatForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const userMessage = chatInput.value.trim();
+        if (!userMessage) return;
+
+        // Display user message immediately
+        const userBubble = document.createElement('div');
+        userBubble.className = 'chat-message user-message';
+        userBubble.textContent = userMessage;
+        chatDisplay.appendChild(userBubble);
+        chatInput.value = '';
+        chatDisplay.scrollTop = chatDisplay.scrollHeight; // Scroll to bottom after user message
+
+        // Send the message to the server
+        fetch('/get_response', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                message: userMessage,
+                conversation_id: currentConversationId
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.message) {
+                // Display the bot response
+                const botBubble = document.createElement('div');
+                botBubble.className = 'chat-message bot-message';
+                botBubble.textContent = data.message;
+                chatDisplay.appendChild(botBubble);
+                chatDisplay.scrollTop = chatDisplay.scrollHeight; // Scroll to bottom after bot message
+
+                // Update the conversation ID if a new one was created
+                if (data.conversation_id) {
+                    currentConversationId = data.conversation_id;
+                }
+
+                // Reload the conversation list
+                loadConversationHistory();
+            } else {
+                alert('Bot returned an empty response.');
+            }
+        })
+        .catch(err => {
+            console.error('Error communicating with chatbot:', err);
+            alert('Error communicating with chatbot.');
+        });
+    });
+
+
+      // -----------------------
+      //   New Chat Button
+      // -----------------------
+      newChatBtn.addEventListener('click', () => {
+        fetch('/new_conversation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        })
+        .then(res => res.json())
+        .then(data => {
+          alert(data.message);  // "New conversation created: Conversation N"
+          loadConversationHistory();
+          currentConversationId = data.conversation_id;
+
+          chatDisplay.innerHTML = `
+            <div class="chat-message system-message">
+              ${data.message}. You can start chatting here!
+            </div>
+          `;
+        })
+        .catch(err => {
+          console.error('Error creating new conversation:', err);
+          alert('Error creating a new conversation. Please try again later.');
+        });
+      });
+
+      // -----------------------
+      //   Dark Mode Toggle
+      // -----------------------
+      const currentTheme = localStorage.getItem('theme') || 'light';
+      document.documentElement.setAttribute('data-theme', currentTheme);
+      themeToggle.checked = (currentTheme === 'dark');
+
+      themeToggle.addEventListener('change', () => {
+        const newTheme = themeToggle.checked ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+      });
+
+      // -------------------------------
+      //   On Page Load
+      // -------------------------------
+      loadConversationHistory();
+    });
+  </script>
+</body>
+</html>

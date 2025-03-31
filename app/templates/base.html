@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Fitness Chatbot{% endblock %}</title>
+    <!-- Bootstrap CSS -->
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/bootstrap.min.css') }}"
+    />
+    <!-- Custom CSS -->
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
+
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    {% block content %}{% endblock %}
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        // Find all close buttons
+        const closeButtons = document.querySelectorAll(".alert-dismissible .close");
+        closeButtons.forEach(button => {
+            button.addEventListener("click", function () {
+                const alertBox = this.closest(".alert");
+                if (alertBox) {
+                    // Add fade-out transition
+                    alertBox.classList.remove("show");
+                    alertBox.addEventListener("transitionend", () => alertBox.remove());
+                }
+            });
+        });
+    });
+</script>
+
+    <!-- Bootstrap JS (includes Popper.js) -->
+    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>
